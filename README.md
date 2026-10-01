@@ -1,106 +1,83 @@
-# Asistente de Normas Viales CDMX con Llama
+# Asistente de Normas Viales de la Ciudad de México
 
-Asistente de línea de comandos que responde preguntas sobre normas viales de la Ciudad de México usando recuperación aumentada por generación (RAG). Busca fragmentos relevantes en los documentos PDF del proyecto, los entrega a Llama 2 y muestra las fuentes consultadas.
+Prototipo educativo de un asistente basado en Llama que responde preguntas sobre normas viales y contingencias ambientales con recuperación aumentada por generación (RAG). La demostración funcional más reciente está en el notebook `Llama_IA.ipynb` y se ejecuta en Google Colaboratory.
 
-También incluye una comprobación de circulación por terminación de placa. Esa función es actualmente una **regla de demostración simplificada**; no refleja el calendario oficial completo ni contingencias ambientales. No debe usarse para decidir si un vehículo puede circular.
+> El proyecto es informativo y experimental. No sustituye las disposiciones oficiales ni asesoría legal. Los PDF incluidos son documentos estáticos; el asistente no consulta en tiempo real si Hoy No Circula o una contingencia están activos.
 
-## Funciones actuales
+## Abrir la demostración en Colab
 
-- Carga tres documentos PDF locales y extrae su texto.
-- Divide el texto en fragmentos de 1,000 caracteres con 150 de traslape.
-- Busca los tres fragmentos más relevantes con FAISS y embeddings multilingües.
-- Genera respuestas en español con `meta-llama/Llama-2-7b-chat-hf`.
-- Imprime los nombres de archivo y páginas recuperados como fuentes.
-- Acepta consultas de placa con el formato `placa:ABC1234`.
+[![Abrir en Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/SebastianVeraM/Asistente-de-Normas-Viales-con-LLama/blob/main/Llama_IA.ipynb)
 
-## Requisitos
+1. Abre el notebook con el enlace anterior e inicia sesión en Colab.
+2. En **Entorno de ejecución → Cambiar tipo de entorno de ejecución**, selecciona una GPU si está disponible.
+3. En el panel **Secretos** (icono de llave), crea `HF_TOKEN` con un token de lectura de Hugging Face y habilita su uso en el notebook. La cuenta debe tener acceso aprobado a `meta-llama/Llama-3.2-3B-Instruct`.
+4. Ejecuta las celdas en orden. El notebook clona este repositorio, lee los PDF, prepara embeddings, recupera fragmentos y carga el modelo.
 
-- Python 3.12 (el entorno de desarrollo del proyecto usa esta versión).
-- Espacio en disco y memoria suficientes para Llama 2 7B. Los pesos descargados ocupan aproximadamente 13.5 GB; cargar y generar respuestas en CPU puede tardar varios minutos.
-- Cuenta de Hugging Face con acceso aprobado a `meta-llama/Llama-2-7b-chat-hf`.
-- Los dos modelos deben estar descargados en la caché local de Hugging Face antes de ejecutar la aplicación. El código usa `local_files_only=True`, por lo que no intenta descargarlos al iniciar.
+El token se usa para descargar el modelo desde Hugging Face Hub; la generación de respuestas ocurre en la GPU de Colab. Nunca escribas el token en una celda ni lo guardes en Git. Si Colab reinicia el entorno, vuelve a ejecutar las celdas: el almacenamiento y las variables de la máquina virtual son temporales.
 
-## Documentos
+## Flujo RAG implementado
 
-Coloca estos archivos PDF en la carpeta raíz del proyecto:
+- Extrae texto y páginas de los PDF con `pypdf` y conserva archivo y número de página como metadatos.
+- Divide el texto en fragmentos con traslape y calcula embeddings multilingües con `paraphrase-multilingual-MiniLM-L12-v2`.
+- Combina similitud semántica con coincidencias léxicas; da prioridad a nombres propios consultados, como municipios, cuando aparecen textualmente en los documentos.
+- Amplía cada fragmento recuperado con fragmentos vecinos de la misma página para reducir respuestas incompletas cuando una regla cruza un límite de fragmentación.
+- Pasa el contexto y sus fuentes a `meta-llama/Llama-3.2-3B-Instruct`. El prompt pide responder en español, citar documento y página, no inventar y abstenerse cuando falte evidencia. También distingue las definiciones explícitas y exenciones de las inferencias no respaldadas.
 
-- `REGLAMENTO_DE_TRNSITO_DE_LA_CIUDAD_DE_MXICO_6.4.pdf`
+El notebook incluye preguntas de prueba sobre límites de velocidad, Ecatepec, contingencias, fuentes de consulta y casos cuya respuesta no aparece en los documentos.
+
+## Por qué se ejecuta en Google Colab
+
+La primera versión intentaba cargar Llama 2 7B en el equipo local. El equipo no tenía memoria y capacidad de cómputo suficientes para ejecutar ese modelo de forma práctica. Por ello, el flujo de demostración se trasladó a Colab, que proporcionó una GPU Tesla T4 con 15 GB de memoria, y se cambió a Llama 3.2 3B Instruct, un modelo más pequeño que sí se pudo cargar en esa GPU.
+
+Este cambio evita depender de la capacidad de cómputo del equipo personal durante la demostración. Colab requiere conexión a Internet para clonar el repositorio y descargar los modelos; la disponibilidad de GPU y la duración de la sesión dependen del servicio.
+
+## Cambios entre la primera versión y la demostración actual
+
+- Se pasó de cargar `meta-llama/Llama-2-7b-chat-hf` localmente a cargar `meta-llama/Llama-3.2-3B-Instruct` en Colab.
+- El acceso a Hugging Face se configura mediante `HF_TOKEN` en Secretos de Colab, sin credenciales en el código.
+- Se organizó el flujo del notebook desde la carga de documentos hasta la generación de respuestas.
+- Se mejoró la recuperación híbrida para preguntas con nombres concretos y se añadió contexto vecino para conservar cláusulas completas.
+- Se ajustaron las instrucciones del modelo para respuestas con fuentes, abstención concisa y una interpretación cuidadosa de excepciones explícitas.
+
+No se aplicó fine-tuning con LoRA en esta etapa. La solución actual usa prompting y RAG para fundamentar las respuestas en los documentos.
+
+## Documentos incluidos
+
+- `REGLAMENTO_DE_TRNSITO_DE_LA_CIUDAD_DE_MEXICO_6.4.pdf` (el nombre del archivo del repositorio conserva `TRNSITO`)
 - `Programa_Hoy_No_Circula.pdf`
 - `Gaceta_Oficial_DF.pdf`
 
-Los nombres deben coincidir exactamente. El programa termina con un error claro si falta un archivo o si no se puede extraer texto. Los PDF escaneados requieren OCR antes de usarse.
+Los resultados dependen de la calidad, fecha y cobertura de estos archivos. Antes de tomar decisiones sobre circulación, contingencias, horarios o restricciones vigentes, consulta los avisos actuales de SEDEMA y de la Comisión Ambiental de la Megalópolis (CAMe).
 
-## Instalación en Windows
+## Scripts locales heredados
 
-Abre PowerShell en la carpeta del proyecto y crea el entorno virtual:
+`app.py`, `rag_pipeline.py` y `plate_checker.py` corresponden a la primera aplicación de consola. `rag_pipeline.py` todavía carga Llama 2 7B desde la caché local (`local_files_only=True`), por lo que estos scripts no representan la migración a Colab ni son la ruta recomendada para la demostración actual. `plate_checker.py` contiene reglas simplificadas de ejemplo; no calcula el calendario oficial, hologramas, días festivos ni contingencias.
 
-```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-```
+## Requisitos de Colab
 
-Instala las dependencias:
+- Cuenta de Google con acceso a Google Colab.
+- Token de lectura de Hugging Face y acceso concedido al repositorio del modelo.
+- GPU de Colab recomendada. La ejecución se comprobó en una Tesla T4 de 15 GB.
+- Los tres PDF del repositorio.
 
-```powershell
-pip install langchain langchain-classic langchain-community langchain-core langchain-huggingface langchain-text-splitters sentence-transformers transformers torch pypdf faiss-cpu
-```
+El notebook instala `pypdf`; el entorno de Colab aporta PyTorch, Transformers y Sentence Transformers. Si Colab cambia su imagen base, puede ser necesario instalar o ajustar versiones de esas dependencias.
 
-Si PowerShell bloquea la activación, puedes invocar el Python del entorno directamente con `\.venv\Scripts\python.exe`.
-
-## Preparar los modelos
-
-Primero acepta los términos y solicita acceso a Llama 2 en Hugging Face. Después inicia sesión desde el entorno virtual y descarga los dos modelos una sola vez:
-
-```powershell
-hf auth login
-hf download meta-llama/Llama-2-7b-chat-hf
-hf download sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-```
-
-El token es personal: no lo pegues en el código ni lo subas al repositorio. Cuando los modelos estén en la caché, la aplicación los carga desde allí.
-
-## Ejecutar
-
-```powershell
-python app.py
-```
-
-La primera inicialización lee los PDFs, calcula los embeddings de todos sus fragmentos y carga Llama. El índice FAISS se reconstruye en cada inicio, así que esa etapa también puede tardar.
-
-Escribe una pregunta, por ejemplo:
-
-```text
-¿Cuál es el límite de velocidad indicado para estacionamientos?
-```
-
-Para probar el verificador simplificado de placas:
-
-```text
-placa:ABC1234
-```
-
-Escribe `salir` para cerrar la aplicación. La respuesta de Llama no se transmite gradualmente: aparece completa al terminar la generación. El máximo actual es de 128 tokens; el tiempo depende del hardware y puede ser largo en CPU.
-
-## Estructura
+## Estructura del repositorio
 
 ```text
 .
-├── app.py                  # Interfaz de consola y bucle de preguntas
-├── plate_checker.py        # Verificación de placa de demostración
-├── rag_pipeline.py         # Carga de PDFs, FAISS, embeddings y Llama
+├── Llama_IA.ipynb                              # Flujo RAG actual para Google Colab
+├── app.py                                       # Interfaz de consola de la versión inicial
+├── rag_pipeline.py                              # Pipeline local inicial con Llama 2 7B
+├── plate_checker.py                             # Verificador simplificado de demostración
 ├── Gaceta_Oficial_DF.pdf
 ├── Programa_Hoy_No_Circula.pdf
-└── REGLAMENTO_DE_TRNSITO_DE_LA_CIUDAD_DE_MXICO_6.4.pdf
+└── REGLAMENTO_DE_TRNSITO_DE_LA_CIUDAD_DE_MEXICO_6.4.pdf
 ```
 
-## Alcance y limitaciones
+## Seguridad y límites
 
-- Es un prototipo educativo e informativo, no una fuente oficial ni asesoría legal.
-- Las respuestas dependen del contenido y vigencia de los PDFs disponibles. Revisa siempre el documento oficial vigente.
-- La comprobación `placa:` es ilustrativa y no consulta holograma, tipo de combustible, día festivo ni contingencias.
-- El sistema actual no conserva el índice FAISS entre ejecuciones y no transmite tokens en streaming.
-
-## Archivos locales y credenciales
-
-No agregues al control de versiones el entorno `.venv`, tokens, archivos `.env` ni cachés de modelos. Guarda los tokens mediante `hf auth login` o variables de entorno seguras, nunca dentro del código fuente.
+- No subas tokens, archivos `.env`, entornos virtuales ni cachés de modelos.
+- La lista de fragmentos recuperados ayuda a revisar el contexto, pero no garantiza por sí sola que la respuesta sea correcta.
+- Los documentos normativos pueden quedar desactualizados; el notebook no verifica cambios ni avisos nuevos en Internet.
+- Verifica las citas y el texto original, especialmente para preguntas legales o restricciones vigentes.
